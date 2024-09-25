@@ -1,0 +1,167 @@
+RS EQU P0.0
+RW EQU P0.1
+E EQU P0.2
+ORG 0000H           ; Reset vector
+
+    LJMP MAIN       ; Jump to the main program
+
+ORG 0003H           ; INT0 vector location
+    AJMP KEY_ISR    ; Jump to the interrupt service routine for key press
+
+MAIN:
+    MOV IE, #81H    ; Enable External Interrupt 0 (INT0) and global interrupt
+
+    ; --- LCD Initialization ---
+    MOV A,#38H
+    ACALL COMNWRT
+    ACALL DELAY
+    MOV A,#0EH
+    ACALL COMNWRT
+    ACALL DELAY
+    MOV A,#01
+    ACALL COMNWRT
+    ACALL DELAY
+    MOV A,#06H
+    ACALL COMNWRT
+    ACALL DELAY
+    MOV A,#84H
+    ACALL COMNWRT
+    ACALL DELAY
+
+    ; --- Initial Display ---
+    MOV A,#'N'
+    ACALL DATAWRT
+    ACALL DELAY
+    MOV A,#'O'
+    ACALL DATAWRT
+
+    SJMP $           ; Infinite loop (waiting for interrupt)
+                     ; Program will wait for interrupt and will handle key in the ISR
+
+; --- INTERRUPT SERVICE ROUTINE FOR KEYPAD INPUT ---
+KEY_ISR:
+    PUSH ACC         ; Save registers
+    PUSH PSW
+
+    ; Scan keypad to identify which key is pressed
+    MOV P2,#0FFH     ; Set columns to high
+    MOV P1,#11111110B ; Activate row 0 (set row 0 low)
+
+    MOV A,P2
+    ANL A,#0FFH
+    CJNE A,#0FFH,ROW_0
+
+    MOV P1,#11111101B ; Activate row 1
+    MOV A,P2
+    ANL A,#0FFH
+    CJNE A,#0FFH,ROW_1
+
+    MOV P1,#11111011B ; Activate row 2
+    MOV A,P2
+    ANL A,#0FFH
+    CJNE A,#0FFH,ROW_2
+
+    MOV P1,#11110111B ; Activate row 3
+    MOV A,P2
+    ANL A,#0FFH
+    CJNE A,#0FFH,ROW_3
+
+    MOV P1,#11101111B ; Activate row 4
+    MOV A,P2
+    ANL A,#0FFH
+    CJNE A,#0FFH,ROW_4
+
+    MOV P1,#11011111B ; Activate row 5
+    MOV A,P2
+    ANL A,#0FFH
+    CJNE A,#0FFH,ROW_5
+
+    MOV P1,#10111111B ; Activate row 6
+    MOV A,P2
+    ANL A,#0FFH
+    CJNE A,#0FFH,ROW_6
+
+    MOV P1,#01111111B ; Activate row 7
+    MOV A,P2
+    ANL A,#0FFH
+    CJNE A,#0FFH,ROW_7
+
+    SJMP EXIT_ISR     ; No valid key found, exit ISR
+
+; --- ROW HANDLING ---
+ROW_0: MOV DPTR,#KCODE0 ; Key pressed in row 0
+       SJMP FIND
+ROW_1: MOV DPTR,#KCODE1 ; Key pressed in row 1
+       SJMP FIND
+ROW_2: MOV DPTR,#KCODE2 ; Key pressed in row 2
+       SJMP FIND
+ROW_3: MOV DPTR,#KCODE3 ; Key pressed in row 3
+       SJMP FIND
+ROW_4: MOV DPTR,#KCODE4 ; Key pressed in row 4
+       SJMP FIND
+ROW_5: MOV DPTR,#KCODE5 ; Key pressed in row 5
+       SJMP FIND
+ROW_6: MOV DPTR,#KCODE6 ; Key pressed in row 6
+       SJMP FIND
+ROW_7: MOV DPTR,#KCODE7 ; Key pressed in row 7
+       SJMP FIND
+
+FIND:  RRC A            ; Rotate A to find which column was pressed
+       JNC MATCH
+       INC DPTR         ; Move to the next key in the row
+       SJMP FIND
+
+MATCH: CLR A
+       MOVC A,@A+DPTR   ; Get the key value from the lookup table
+       MOV B,A          ; Store the key value in B
+
+       MOV A,#0C0H      ; Move cursor on the LCD
+       ACALL DELAY
+       ACALL COMNWRT
+       ACALL DELAY
+
+       MOV A,B          ; Display the key on the LCD
+       ACALL DATAWRT
+
+EXIT_ISR:
+    POP PSW            ; Restore registers
+    POP ACC
+    RETI               ; Return from the interrupt
+
+; --- LCD COMMAND SUBROUTINE ---
+COMNWRT:
+    MOV P3,A            ; Copy reg A to Port 3 (LCD data lines)
+    CLR P0.0            ; RS = 0 for command
+    CLR P0.1            ; R/W = 0 for write
+    SETB P0.2           ; E = 1 for high pulse
+    CLR P0.2            ; E = 0 for low pulse (latch the command)
+    RET
+
+; --- LCD DATA SUBROUTINE ---
+DATAWRT:
+    MOV P3,A            ; Copy reg A to Port 3 (LCD data lines)
+    SETB P0.0           ; RS = 1 for data
+    CLR P0.1            ; R/W = 0 for write
+    SETB P0.2           ; E = 1 for high pulse
+    CLR P0.2            ; E = 0 for low pulse (latch the data)
+    RET
+
+; --- DELAY SUBROUTINE ---
+DELAY:
+    MOV R3,#50
+HERE2: MOV R4, #255
+HERE:  DJNZ R4,HERE
+       DJNZ R3,HERE2
+       RET
+
+; --- ASCII LOOKUP TABLE FOR 8x8 KEYPAD ---
+ORG 300H
+KCODE0: DB '0','1','2','3','4','5','6','7'  ; Row 0
+KCODE1: DB '8','9','A','B','C','D','E','F'  ; Row 1
+KCODE2: DB 'G','H','I','J','K','L','M','N'  ; Row 2
+KCODE3: DB 'O','P','Q','R','S','T','U','V'  ; Row 3
+KCODE4: DB 'W','X','Y','Z','a','b','c','d'  ; Row 4
+KCODE5: DB 'e','f','g','h','i','j','k','l'  ; Row 5
+KCODE6: DB 'm','n','o','p','q','r','s','t'  ; Row 6
+KCODE7: DB 'u','v','w','x','y','z','+','-'  ; Row 7
+END
